@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  PermissionsBoundary:
+    Type: String
+    Default: 'arn:aws:iam::aws:policy/AdministratorAccess'
+    Description: Permissions Boundary ARN for all roles
+  LambdaCodeBucket:
+    Type: String
+    Description: Bucket with lambda code
+  LambdaCodeKey:
+    Type: String
+    Description: Key of lambda code zip file
+Resources:
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Description: The role to execute config check using lambda
+      RoleName: !Sub '${AWS::StackName}-LambdaExecutionRole'
+      PermissionsBoundary: !Ref PermissionsBoundary
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: all
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: '*'
+  ConfigPermissionToCallLambda:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - TrustRelationshipComplianceCheck
+        - Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: config.amazonaws.com
+    DependsOn: TrustRelationshipComplianceCheck
+  TrustRelationshipComplianceCheck:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-single-trust-relation-check'
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.6
+      Timeout: '30'
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+    DependsOn: LambdaExecutionRole
+  ConfigRuleForTrustRelationshipCheck:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      ConfigRuleName: !Sub '${AWS::StackName}-TrustRelationshipComplianceCheck'
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::IAM::Role'
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+          - EventSource: aws.config
+            MessageType: OversizedConfigurationItemChangeNotification
+        SourceIdentifier: !GetAtt 
+          - TrustRelationshipComplianceCheck
+          - Arn
+    DependsOn: ConfigPermissionToCallLambda

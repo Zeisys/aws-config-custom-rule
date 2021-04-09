@@ -1,0 +1,4 @@
+stackNamePrefix: customrule-101
+# stackNamePrefix not to exceed 14 characters
+region: us-east-1
+permissionBoundary: 'arn:aws:iam::aws:policy/AdministratorAccess'
